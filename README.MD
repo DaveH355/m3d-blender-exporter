@@ -5,7 +5,7 @@ The original source and docs are at https://gitlab.com/bztsrc/model3d
 Last tested with Blender 3.6.3
 
 ## ChangeLog
-* Added and export option to allow UV coordinates outside the 0-1 range
+* Added an export option to allow UV coordinates outside the 0-1 range
 * Textures will be checked in the .blend file as well as system. 
 
 
