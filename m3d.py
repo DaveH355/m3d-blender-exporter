@@ -45,7 +45,7 @@ bl_info = {
 # -----------------------------------------------------------------------------
 # Import libraries
 import time
-
+import zlib
 import bmesh
 import os
 from struct import pack, unpack
@@ -210,32 +210,59 @@ def write_m3d(context,
         q.normalize()
         return Matrix.Translation(p) @ q.to_matrix().to_4x4()
 
-    # texture_path is already absolute path to texture
-    def gettexture(texture_path, use_inline):
-        # image name without .png extension
-        image_name = os.path.splitext(os.path.basename(texture_path))[0]
+    def img_to_png(image):
+        width = image.size[0]
+        height = image.size[1]
+        buf = bytearray([int(p * 255) for p in image.pixels])
 
-        if image_name != "" and use_inline:
+        # reverse the vertical line order and add null bytes at the start
+        width_byte_4 = width * 4
+        raw_data = b''.join(b'\x00' + buf[span:span + width_byte_4]
+                            for span in range((height - 1) * width_byte_4, -1, - width_byte_4))
+
+        def png_pack(png_tag, data):
+            chunk_head = png_tag + data
+            return (pack("!I", len(data)) +
+                    chunk_head +
+                    pack("!I", 0xFFFFFFFF & zlib.crc32(chunk_head)))
+
+        png_bytes = b''.join([
+            b'\x89PNG\r\n\x1a\n',
+            png_pack(b'IHDR', pack("!2I5B", width, height, 8, 6, 0, 0, 0)),
+            png_pack(b'IDAT', zlib.compress(raw_data, 1)),
+            png_pack(b'IEND', b'')])
+
+        return png_bytes
+
+    def gettexture(node_image, use_inline):
+        # NOTE: filepath on image could start with // or already absolute path
+        image_path = bpy.path.abspath(node_image.filepath)
+
+        if use_inline:
             # Check if the image is packed in Blender
             for img in bpy.data.images:
-                if img.filepath == texture_path and img.packed_file is not None:
-                    return [image_name, img.packed_file.data]
+                if img.name == node_image.name and img.packed_file is not None:
+
+                    if img.file_format == "PNG":
+                        return [node_image.name, img.packed_file.data]
+                    else:
+                        print("Texture ", img.name + " is not a png. Converting...")
+                        png_data = img_to_png(img)
+                        return [node_image.name, png_data]
 
             # If not packed, try reading from the file system
-            try:
-                with open(texture_path, 'rb') as file:
+            if image_path != "":
+                with open(image_path, 'rb') as file:
                     data = file.read()
 
-                # valid PNG start with the four bytes "\x89PNG"
                 if len(data) < 8 or data[0:4] != b'\x89PNG':
-                    report({"ERROR"}, f"Texture file '{texture_path}' not a valid PNG. Cannot be inlined.")
-                    return [image_name, b'']
+                    report({"ERROR"}, f"Texture file '{node_image}' not a valid PNG. Cannot be inlined.")
+                    return [node_image.name, b'']
                 else:
-                    return [image_name, data]
-            except FileNotFoundError:
-                report({"ERROR"}, f"Texture file '{texture_path}' not found. Cannot be inlined.")
+                    return [node_image.name, data]
 
-        return [image_name, b'']
+            report({"ERROR"}, f"Texture file '{node_image}' not found. Cannot be inlined.")
+        return [node_image.name, b'']
 
     # recursively walk skeleton and construct string representation
     def bonestr(strs, bones, parent, level):
@@ -546,10 +573,10 @@ def write_m3d(context,
                         # at least try to get the diffuse texture from other material types,
                         # because not all wrapped in PrincipledBSDF properly
                         for n in mat.node_tree.nodes:
-                            if n.type == 'TEX_IMAGE' and n.image and n.image.filepath and n.image.filepath != "" and n.image.filepath != "//":
-                                imgpath, data = gettexture(n.image.filepath, use_inline)
-                                if imgpath != "":
-                                    s = uniquedict(strs, imgpath)
+                            if n.type == 'TEX_IMAGE' and n.image:
+                                texture_name, data = gettexture(n.image, use_inline)
+                                if texture_name != "":
+                                    s = uniquedict(strs, texture_name)
                                     if use_inline and len(data) > 8:
                                         uniquedict(inlined, [s, data])
                                     props[128] = [128, s]
@@ -597,13 +624,11 @@ def write_m3d(context,
 
                             if key >= 128:
                                 # according to the doc, texture material attributes should always have val.image
-                                # but sometimes they don't... And sometimes filename is "//" for whatever reason...
-                                if val.image is None or val.image.filepath is None or val.image.filepath == "" or val.image.filepath == "//":
+                                # but sometimes they don't...
+                                if val.image is None:
                                     continue
-                                imgpath, data = gettexture(val.image.filepath, use_inline)
-                                if imgpath == "":
-                                    continue
-                                s = uniquedict(strs, imgpath)
+                                texture_name, data = gettexture(val.image, use_inline)
+                                s = uniquedict(strs, texture_name)
                                 props[key] = [key, s]
                                 if use_inline and len(data) > 8:
                                     uniquedict(inlined, [s, data])
@@ -1094,7 +1119,6 @@ def write_m3d(context,
                             o = o + addidx(vi_s, f[3][i])
                 buf = buf + b'MESH' + pack("<I", len(o) + 8) + o
 
-
             # labels
             if len(labels) > 0:
                 l = -1
@@ -1129,7 +1153,6 @@ def write_m3d(context,
             # End chunk
             buf = buf + b'OMD3'
             if use_strmcompress:
-                import zlib
                 buf = zlib.compress(buf, 9)
 
             # add file header and write out file

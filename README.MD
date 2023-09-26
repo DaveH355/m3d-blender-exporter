@@ -7,7 +7,8 @@ Last tested with Blender 3.6.3
 ## ChangeLog
 * Added an export option to allow UV coordinates outside the 0-1 range
 * Removed Write Shapes export option as it appears to be unused 
-* Textures will be checked in the .blend file as well as system
+* Textures will be checked in the .blend file as well as system. 
+* They will also be automatically converted to png if needed
 
 
 ## Contribute
