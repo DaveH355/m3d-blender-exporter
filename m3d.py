@@ -34,16 +34,18 @@
 bl_info = {
     "name": "Model 3D (.m3d) format",
     "author": "Dave-bzt",
-    "version": (0, 0, 1),
+    "version": (0, 1),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "description": "Export M3D",
     "wiki_url": "https://gitlab.com/bztsrc/model3d/blob/master/docs/m3d_format.md",
-    "category": "Import-Export"}
+    "category": "Import-Export"
+}
 
 # -----------------------------------------------------------------------------
 # Import libraries
 import time
+
 import bmesh
 import os
 from struct import pack, unpack
@@ -105,7 +107,6 @@ def write_m3d(context,
               use_uvs=True,  # save texture map UV coordinates
               allow_unnormalized_uvs=False,
               use_colors=True,  # save per vertex colors
-              use_shapes=False,  # save shape commands
               use_materials=True,  # save materials
               use_skeleton=True,  # save bind-pose armature
               use_animation=True,  # save skeletal animations
@@ -301,7 +302,6 @@ def write_m3d(context,
         verts = {}  # unique list of vertices
         tmaps = {}  # texture map UV coordinates
         faces = []  # triangles list
-        shapes = []  # shapes list
         labels = []  # annotation labels
         materials = []  # translated material name and properties
         bones = {}  # bind-pose skeleton
@@ -970,7 +970,6 @@ def write_m3d(context,
             si_s = idxsize(o)
             bi_s = idxsize(len(bones))
             sk_s = idxsize(len(skins))
-            hi_s = idxsize(len(shapes))
             fi_s = idxsize(len(faces))
             if nb_m < 2:
                 nb_s = 0
@@ -983,7 +982,7 @@ def write_m3d(context,
             fc_s = idxsize(fi_m)
             flags = (use_quality << 0) | (vi_s << 2) | (si_s << 4) | (ci_s << 6) | (ti_s << 8) | (bi_s << 10) | (
                     nb_s << 12)
-            flags |= (sk_s << 14) | (fc_s << 16) | (hi_s << 18) | (fi_s << 20)
+            flags |= (sk_s << 14) | (fc_s << 16) | (fi_s << 20)
             buf = pack("<f", use_scale) + pack("<I", flags) + st
             buf = b'HEAD' + pack("<I", len(buf) + 8) + buf
 
@@ -1095,13 +1094,6 @@ def write_m3d(context,
                             o = o + addidx(vi_s, f[3][i])
                 buf = buf + b'MESH' + pack("<I", len(o) + 8) + o
 
-            # shapes
-            if len(shapes) > 0:
-                l = -1
-                o = b''
-                for f in shapes:
-                    o = o + b''
-                buf = buf + b'SHPE' + pack("<I", len(o) + 8) + o
 
             # labels
             if len(labels) > 0:
@@ -1262,11 +1254,6 @@ class ExportM3D(bpy.types.Operator, ExportHelper):
         description="Write out individual vertex colors (independent to material colors)",
         default=True,
     )
-    use_shapes: BoolProperty(
-        name="Write Shapes",
-        description="Write out as parameterized shapes",
-        default=False,
-    )
     use_materials: BoolProperty(
         name="Write Materials",
         description="Write out the materials",
@@ -1346,7 +1333,6 @@ def register():
     bpy.utils.register_class(ExportM3D)
     bpy.utils.register_class(ImportM3D)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-
 
     # bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
