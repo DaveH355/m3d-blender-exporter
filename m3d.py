@@ -43,16 +43,12 @@ bl_info = {
 
 # -----------------------------------------------------------------------------
 # Import libraries
-
+import time
 import bmesh
 import os
 from struct import pack, unpack
 from mathutils import Matrix
 from bpy_extras import io_utils, node_shader_utils
-from bpy_extras.wm_utils.progress_report import (
-    ProgressReport,
-    ProgressReportSubstep,
-)
 
 # -----------------------------------------------------------------------------
 #  Blender material property and M3D property type assignments
@@ -160,8 +156,6 @@ def write_m3d(context,
             l[h] = [i, e]
         return i
 
-
-
     def dict2list(l):
         r = []
         for i, v in l.items():
@@ -251,7 +245,12 @@ def write_m3d(context,
                 ret += bonestr(strs, bones, i, level + 1)
         return ret
 
-    with ProgressReport(context.window_manager) as progress:
+    # the function execution block
+    if True:
+        # track time (just for debug)
+        time_start = time.time()
+
+        bpy.context.window_manager.progress_begin(0, 100)
 
         if global_matrix is None:
             global_matrix = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
@@ -310,7 +309,6 @@ def write_m3d(context,
         actions = []  # animations
         inlined = {}  # inlined textures
         extras = []  # extra chunks (engine specific)
-        progress.enter_substeps(2 + use_materials + use_skeleton + use_animation)
 
         # ----------------- Start of Blender Specific Stuff ---------------------
         refmats = {}  # unique list of referenced Blender material objects
@@ -334,7 +332,6 @@ def write_m3d(context,
         ### Armature ###
         if use_skeleton:
             # this must be done before the mesh so that skin can refer to bones
-            progress.step("Exporting Armature")
             idx = 0
             for i, ob_main in enumerate(objects):
                 if ob_main.type != "ARMATURE":
@@ -382,13 +379,12 @@ def write_m3d(context,
                                                round(q.w, digits), 0, -2))]]
                     idx = idx + 1
             if len(bones) < 1 and use_animation:
-                report({"ERROR"}, "Skipping skeletal animation in lack of armature.")
+                report({"WARNING"}, "Skipping skeletal animation in lack of armature.")
                 use_animation = False
 
-        ### Mesh data ###
-        progress.step("Exporting Mesh")
-        progress.enter_substeps(len(objects))
+        bpy.context.window_manager.progress_update(20)
 
+        ### Mesh data ###
         for i, ob_main in enumerate(objects):
             if ob_main.parent and ob_main.parent.instance_type in {'VERTS', 'FACES'}:
                 continue
@@ -536,13 +532,11 @@ def write_m3d(context,
                             face[2][i] = uniquedict(tmaps, list(uv_layer[li].uv[:]))
                     faces.append(face)
                 del me
-            progress.step()
-        progress.leave_substeps()
+
+        bpy.context.window_manager.progress_update(40)
 
         ### Materials ###
         if use_materials:
-            progress.step("Exporting Materials")
-            progress.enter_substeps(len(refmats))
             for i, v in refmats.items():
                 mi = v[0]
                 mat = v[1]
@@ -629,12 +623,11 @@ def write_m3d(context,
                     # append material if it has at least one property
                     if len(props) > 0:
                         materials.append([uniquedict(strs, safestr(mat.name)), props])
-                progress.step()
-            progress.leave_substeps()
+
+        bpy.context.window_manager.progress_update(60)
 
         ### Actions ###
         if use_animation:
-            progress.step("Exporting Animations")
             if use_skeleton and len(bones) > 0:
                 mpf = 1000.0 / use_fps  # msec per frame
                 acts = []
@@ -671,7 +664,6 @@ def write_m3d(context,
                     acts.append(["Anim", -1, scene.frame_start, scene.frame_end])
                     nf = scene.frame_end - scene.frame_start
                 # ok, now 'acts' is an array of [action name, action pose index, start frame, end frame]
-                progress.enter_substeps(nf + 1)
                 for a in acts:
                     # set action pose
                     scene.frame_set(0, subframe=0.0)
@@ -701,7 +693,7 @@ def write_m3d(context,
                                 except:
                                     report({"ERROR"},
                                            "Animated bone name '" + b.name + "' does not match any bind-pose bone???")
-                                    break;
+                                    break
                                 # we need model-space p,q only for bones without parents
                                 m = matnorm(global_matrix @ ob_main.matrix_world @ b.matrix)
                                 if use_relbones == True and b.parent:
@@ -732,11 +724,9 @@ def write_m3d(context,
                             lf = frame
                             if len(changed) > fi_m:
                                 fi_m = len(changed)
-                        progress.step()
                     # if the action has at least one frame, save it
                     if len(frames) > 0:
                         actions.append([uniquedict(strs, safestr(a[0])), int((lf - a[2] + 1) * mpf), frames])
-                progress.leave_substeps()
             else:
                 report({"ERROR"}, "Trying to export animations without armature and skin")
         # restore original armature
@@ -747,6 +737,8 @@ def write_m3d(context,
                 ob_main.data.pose_position = oldpose[i]
                 ob_main.data.update_tag()
         context.scene.frame_set(oldframe)
+
+        bpy.context.window_manager.progress_update(75)
 
         # we need lists, but creating unique lists in python is impossible, so we
         # have used dictionaries. Let's convert those into lists now
@@ -821,7 +813,6 @@ def write_m3d(context,
             use_scale = 1.0
 
         # Construct chunks buffer from lists
-        progress.step("Compressing output")
         print(len(verts), "verts,", len(faces), "faces,", len(tmaps), "UVs", len(materials), "materials,", len(bones),
               "bones,", len(skins), "skins,", len(actions), "actions")
 
@@ -1013,7 +1004,6 @@ def write_m3d(context,
                         if r:
                             r = False
                             report({"ERROR"}, "Texture UV's are out of 0..1 range")
-                        # print("Eeeeeek texture UV's are out of 0..1 range? Should never happen!", t)
                         if t[0] > 1.0:
                             t[0] = 1.0
                         if t[0] < 0.0:
@@ -1145,7 +1135,7 @@ def write_m3d(context,
                     buf = buf + e[0][0:3] + pack("<I", len(e[1]) + 8) + e[1]
 
             # End chunk
-            buf = buf + b'OMD3';
+            buf = buf + b'OMD3'
             if use_strmcompress:
                 import zlib
                 buf = zlib.compress(buf, 9)
@@ -1156,9 +1146,12 @@ def write_m3d(context,
             f.write(b'3DMO' + pack("<L", s) + buf)
             f.close()
 
-        progress.leave_substeps("Finished!")
+        bpy.context.window_manager.progress_update(100)
 
-        report({"INFO"}, "Model 3D " + filepath + " (" + str(s) + " bytes) exported.")
+        execution_time = "%.4f sec" % (time.time() - time_start)
+        report({"INFO"}, "Model 3D export time taken: " + execution_time)
+
+        report({"INFO"}, "Model 3D " + filepath + " (" + str(s) + " bytes) exported")
     return {'FINISHED'}
 
 
@@ -1193,9 +1186,7 @@ class ImportM3D(bpy.types.Operator, ImportHelper):
     )
 
     def execute(self, context):
-        # TODO: implement
-        pass
-        # return read_m3d(context, self.filepath, self.report)
+        return read_m3d(context, self.filepath, self.report)
 
 
 class ExportM3D(bpy.types.Operator, ExportHelper):
@@ -1357,12 +1348,12 @@ def register():
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
 
-#    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    # bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-    #    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+    # bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     bpy.utils.unregister_class(ExportM3D)
     bpy.utils.unregister_class(ImportM3D)
 
