@@ -1161,7 +1161,7 @@ def write_m3d(context,
             f.write(b'3DMO' + pack("<L", s) + buf)
             f.close()
 
-        bpy.context.window_manager.progress_update(100)
+        bpy.context.window_manager.progress_end()
 
         execution_time = "%.4f sec" % (time.time() - time_start)
         report({"INFO"}, "Model 3D export time taken: " + execution_time)
@@ -1267,9 +1267,16 @@ class ExportM3D(bpy.types.Operator, ExportHelper):
         default=True,
     )
 
+    def update_unnormalized_uvs(self, context):
+        if self.allow_unnormalized_uvs:
+            self.use_quality = '2'
+        else:
+            self.use_quality = '-1'
+
     allow_unnormalized_uvs: BoolProperty(
         name="Allow Unnormalized UVs",
         description="Allow UV coordinates outside of the 0-1 range",
+        update=update_unnormalized_uvs,
         default=False,
     )
     use_colors: BoolProperty(
@@ -1303,16 +1310,26 @@ class ExportM3D(bpy.types.Operator, ExportHelper):
         min=1, max=120,
         default=25,
     )
+
+    def get_quality_items(self, context):
+        if self.allow_unnormalized_uvs:
+            # Only float and double precision options available
+            items = [('2', '32 bits (float)', 'float precision coordinates (used by most other binary formats)'),
+                     ('3', '64 bits (double)', 'double precision coordinates (rarely needed)')]
+        else:
+            # All options available
+            items = [('-1', 'auto', 'choose depending on the number of polygons'),
+                     ('0', '8 bits (int8)', '1/256 coordinate unit (for low poly models)'),
+                     ('1', '16 bits (int16)', '1/65536 coordinate unit (more than enough in most cases)'),
+                     ('2', '32 bits (float)', 'float precision coordinates (used by most other binary formats)'),
+                     ('3', '64 bits (double)', 'double precision coordinates (rarely needed)')]
+
+        return items
+
     use_quality: EnumProperty(
         name="Precision",
-        items=(('-1', 'auto', 'choose depending on the number of polygons'),
-               ('0', '8 bits (int8)', '1/256 coordinate unit (for low poly models)'),
-               ('1', '16 bits (int16)', '1/65536 coordinate unit (more than enough in most cases)'),
-               ('2', '32 bits (float)', 'float precision coordinates (used by most other binary formats)'),
-               ('3', '64 bits (double)', 'double precision coordinates (rarely needed)'),
-               ),
+        items=get_quality_items,
         description="Coordinate grid system's size and precision",
-        default='-1',
     )
     use_inline: BoolProperty(
         name="Embed Assets",
