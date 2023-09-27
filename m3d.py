@@ -288,7 +288,6 @@ def write_m3d(context,
             use_fps = 25
 
         # Get Blender objects to export
-        depsgraph = context.evaluated_depsgraph_get()
         scene = context.scene
         if use_selection:
             objects = context.selected_objects
@@ -302,11 +301,8 @@ def write_m3d(context,
             for i, ob_main in enumerate(objects):
                 if ob_main.parent and ob_main.parent.instance_type in {'VERTS', 'FACES'}:
                     continue
-                try:
-                    me = ob_main.original.to_mesh()
-                    n += len(me.polygons)
-                except:
-                    continue
+                if ob_main.type == 'MESH':
+                    n += len(ob_main.data.polygons)
             if n < 1024:
                 use_quality = 0
             else:
@@ -412,6 +408,8 @@ def write_m3d(context,
         bpy.context.window_manager.progress_update(20)
 
         ### Mesh data ###
+        depsgraph = context.evaluated_depsgraph_get()
+
         for i, ob_main in enumerate(objects):
             if ob_main.parent and ob_main.parent.instance_type in {'VERTS', 'FACES'}:
                 continue
@@ -422,14 +420,12 @@ def write_m3d(context,
                         for dup in depsgraph.object_instances
                         if dup.parent and dup.parent.original == ob_main]
             for ob, ob_mat in obs:
-                # get a copy of the mesh object
-                try:
-                    o = ob.evaluated_get(depsgraph) if use_mesh_modifiers else ob.original
-                    me = o.to_mesh()
-                except:
-                    me = None
-                if me is None or len(me.polygons) < 1:
+                if ob.type != 'MESH':
                     continue
+
+                o = ob.evaluated_get(depsgraph) if use_mesh_modifiers else ob.original
+                me = o.to_mesh()
+
                 if use_name is None or use_name == '':
                     use_name = ob.name
 
@@ -1013,14 +1009,15 @@ def write_m3d(context,
 
             # color map
             if len(cmap) > 0 and ci_s < 4:
-                buf = buf + b'CMAP' + pack("<I", len(cmap) * 4 + 8)
+                byte_list = []
                 for col in cmap:
-                    for i in range(0, 4):
-                        buf = buf + pack("<B", int(col[i] * 255))
+                    for i in range(4):
+                        byte_list.append(pack("<B", int(col[i] * 255)))
+                buf = buf + b'CMAP' + pack("<I", len(cmap) * 4 + 8) + b''.join(byte_list)
 
             # texture map
             if len(tmaps) > 0:
-                buf = buf + b'TMAP' + pack("<I", len(tmaps) * 2 * (1 << use_quality) + 8)
+                byte_list = []
                 r = True
                 for t in tmaps:
                     # failsafes
@@ -1028,98 +1025,116 @@ def write_m3d(context,
                         if r:
                             r = False
                             report({"ERROR"}, "Texture UV's are out of 0..1 range")
-                        if t[0] > 1.0:
-                            t[0] = 1.0
-                        if t[0] < 0.0:
-                            t[0] = 0.0
-                        if t[1] > 1.0:
-                            t[1] = 1.0
-                        if t[1] < 0.0:
-                            t[1] = 0.0
+                        t = [max(min(t[0], 1.0), 0.0), max(min(t[1], 1.0), 0.0)]
                     if use_quality == 0:
-                        buf = buf + pack("<BB", int(t[0] * 255), int(t[1] * 255))
+                        byte_list.append(pack("<BB", int(t[0] * 255), int(t[1] * 255)))
                     elif use_quality == 1:
-                        buf = buf + pack("<HH", int(t[0] * 65535), int(t[1] * 65535))
+                        byte_list.append(pack("<HH", int(t[0] * 65535), int(t[1] * 65535)))
                     elif use_quality == 3:
-                        buf = buf + pack("<dd", t[0], t[1])
+                        byte_list.append(pack("<dd", t[0], t[1]))
                     else:
-                        buf = buf + pack("<ff", t[0], t[1])
+                        byte_list.append(pack("<ff", t[0], t[1]))
+
+                buf = buf + b'TMAP' + pack("<I", len(tmaps) * 2 * (1 << use_quality) + 8) + b''.join(byte_list)
 
             # vertex list
             if len(verts) > 0:
-                o = b''
+                byte_list = []
                 for v in verts:
-                    for i in range(0, 4):
-                        if use_quality == 0:
-                            o = o + pack("<b", int(v[i] * 127))
-                        elif use_quality == 1:
-                            o = o + pack("<h", int(v[i] * 32767))
-                        elif use_quality == 3:
-                            o = o + pack("<d", v[i])
-                        else:
-                            o = o + pack("<f", v[i])
-                    if ci_s < 4:
-                        o = o + addidx(ci_s, v[4])
+                    if use_quality == 0:
+                        for i in range(4):
+                            byte_list.append(pack("<b", int(v[i] * 127)))
+                    elif use_quality == 1:
+                        for i in range(4):
+                            byte_list.append(pack("<h", int(v[i] * 32767)))
+                    elif use_quality == 3:
+                        for i in range(4):
+                            byte_list.append(pack("<d", v[i]))
                     else:
-                        o = o + pack("<I", cmap[v[4]])
-                    o = o + addidx(sk_s, v[5])
+                        for i in range(4):
+                            byte_list.append(pack("<f", v[i]))
+
+                    if ci_s < 4:
+                        byte_list.append(addidx(ci_s, v[4]))
+                    else:
+                        byte_list.append(pack("<I", cmap[v[4]]))
+                    byte_list.append(addidx(sk_s, v[5]))
+
+                o = b''.join(byte_list)
                 buf = buf + b'VRTS' + pack("<I", len(o) + 8) + o
 
             # skeleton
             if len(bones) > 0 or len(skins) > 0:
-                o = addidx(bi_s, len(bones)) + addidx(sk_s, len(skins))
+                byte_list = [addidx(bi_s, len(bones)), addidx(sk_s, len(skins))]
                 for b in bones:
-                    o = o + addidx(bi_s, b[0]) + addidx(si_s, stridx[b[1]]) + addidx(vi_s, b[2]) + addidx(vi_s, b[3])
+                    byte_list.extend(
+                        [addidx(bi_s, b[0]), addidx(si_s, stridx[b[1]]), addidx(vi_s, b[2]), addidx(vi_s, b[3])])
                 for s in skins:
                     if nb_s > 0:
-                        for i in range(0, 1 << nb_s):
+                        for i in range(1 << nb_s):
                             if i >= len(s):
-                                o = o + pack("<B", 0)
+                                byte_list.append(pack("<B", 0))
                             else:
-                                o = o + pack("<B", s[i][1])
-                    for i in range(0, min(len(s), 1 << nb_s)):
+                                byte_list.append(pack("<B", s[i][1]))
+                    for i in range(min(len(s), 1 << nb_s)):
                         if s[i][1] != 0:
-                            o = o + addidx(bi_s, s[i][0])
+                            byte_list.append(addidx(bi_s, s[i][0]))
+                o = b''.join(byte_list)
                 buf = buf + b'BONE' + pack("<I", len(o) + 8) + o
 
             # materials
             if len(materials) > 0:
                 for m in materials:
-                    o = addidx(si_s, stridx[m[0]])
+                    byte_list = [addidx(si_s, stridx[m[0]])]
                     for pi, p in m[1].items():
-                        o = o + pack("<B", p[0])
+                        byte_list.append(pack("<B", p[0]))
                         t = mat_property_map[p[0]]
                         if t[0] == "color" or t[0] == "gscale":
                             if ci_s < 4:
-                                o = o + addidx(ci_s, p[1])
+                                byte_list.append(addidx(ci_s, p[1]))
                             else:
-                                o = o + pack("<I", cmap[p[1]])
+                                byte_list.append(pack("<I", cmap[p[1]]))
                         elif t[0] == "byte" or t[0] == "//byte":
-                            o = o + pack("<B", p[1])
+                            byte_list.append(pack("<B", p[1]))
                         elif p[0] >= 128:
-                            o = o + addidx(si_s, stridx[p[1]])
+                            byte_list.append(addidx(si_s, stridx[p[1]]))
                         else:
-                            o = o + pack("<f", p[1])
+                            byte_list.append(pack("<f", p[1]))
+                    o = b''.join(byte_list)
                     buf = buf + b'MTRL' + pack("<I", len(o) + 8) + o
 
             # triangle mesh
             if len(faces) > 0:
                 l = -1
-                o = b''
+                byte_list = []
                 for f in faces:
                     if l != f[0]:
                         l = f[0]
-                        o = o + pack("<b", 0) + addidx(si_s, stridx[l])
-                    o = o + pack("<b", (len(f[1]) << 4) | use_uvs | (use_normals << 1))
-                    for i, v in enumerate(f[1]):
-                        o = o + addidx(vi_s, v)
-                        if use_uvs:
-                            o = o + addidx(ti_s, f[2][i])
-                        if use_normals:
-                            o = o + addidx(vi_s, f[3][i])
+                        byte_list.append(pack("<b", 0))
+                        byte_list.append(addidx(si_s, stridx[l]))
+                    byte_list.append(pack("<b", (len(f[1]) << 4) | use_uvs | (use_normals << 1)))
+
+                    if use_uvs and use_normals:
+                        for i, v in enumerate(f[1]):
+                            byte_list.append(addidx(vi_s, v))
+                            byte_list.append(addidx(ti_s, f[2][i]))
+                            byte_list.append(addidx(vi_s, f[3][i]))
+                    elif use_uvs:
+                        for i, v in enumerate(f[1]):
+                            byte_list.append(addidx(vi_s, v))
+                            byte_list.append(addidx(ti_s, f[2][i]))
+                    elif use_normals:
+                        for i, v in enumerate(f[1]):
+                            byte_list.append(addidx(vi_s, v))
+                            byte_list.append(addidx(vi_s, f[3][i]))
+                    else:
+                        for v in f[1]:
+                            byte_list.append(addidx(vi_s, v))
+
+                o = b''.join(byte_list)
                 buf = buf + b'MESH' + pack("<I", len(o) + 8) + o
 
-            # labels
+            # labels (usused for now)
             if len(labels) > 0:
                 l = -1
                 o = b''
@@ -1132,23 +1147,28 @@ def write_m3d(context,
                 for a in actions:
                     if len(a[2]) < 1:
                         continue
-                    o = addidx(si_s, stridx[a[0]]) + pack("<H", len(a[2])) + pack("<I", a[1])
+                    byte_list = [addidx(si_s, stridx[a[0]]), pack("<H", len(a[2])), pack("<I", a[1])]
                     for f in a[2]:
-                        o = o + pack("<I", f[0]) + addidx(fc_s, len(f[1]))
+                        byte_list.extend([pack("<I", f[0]), addidx(fc_s, len(f[1]))])
                         for t in f[1]:
-                            o = o + addidx(bi_s, t[0]) + addidx(vi_s, t[1]) + addidx(vi_s, t[2])
+                            byte_list.extend([addidx(bi_s, t[0]), addidx(vi_s, t[1]), addidx(vi_s, t[2])])
+                    o = b''.join(byte_list)
                     buf = buf + b'ACTN' + pack("<I", len(o) + 8) + o
 
             # inlined assets
             if len(inlined) > 0:
+                byte_list = [buf]
                 for i in inlined:
                     o = addidx(si_s, stridx[i[0]]) + i[1]
-                    buf = buf + b'ASET' + pack("<I", len(o) + 8) + o
+                    byte_list.append(b'ASET' + pack("<I", len(o) + 8) + o)
+                buf = b''.join(byte_list)
 
             # extra chunks
             if len(extras) > 0:
+                byte_list = [buf]
                 for e in extras:
-                    buf = buf + e[0][0:3] + pack("<I", len(e[1]) + 8) + e[1]
+                    byte_list.append(e[0][0:4] + pack("<I", len(e[1]) + 8) + e[1])
+                buf = b''.join(byte_list)
 
             # End chunk
             buf = buf + b'OMD3'
