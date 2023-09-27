@@ -234,7 +234,7 @@ def write_m3d(context,
 
         return png_bytes
 
-    def gettexture(node_image, use_inline):
+    def get_texturedata(node_image, use_inline):
         # NOTE: filepath on image could start with // or already absolute path
         image_path = bpy.path.abspath(node_image.filepath)
 
@@ -244,11 +244,11 @@ def write_m3d(context,
                 if img.name == node_image.name and img.packed_file is not None:
 
                     if img.file_format == "PNG":
-                        return [node_image.name, img.packed_file.data]
+                        return img.packed_file.data
                     else:
                         print("Texture ", img.name + " is not a png. Converting...")
                         png_data = img_to_png(img)
-                        return [node_image.name, png_data]
+                        return png_data
 
             # If not packed, try reading from the file system
             if image_path != "":
@@ -257,12 +257,12 @@ def write_m3d(context,
 
                 if len(data) < 8 or data[0:4] != b'\x89PNG':
                     report({"ERROR"}, f"Texture file '{node_image}' not a valid PNG. Cannot be inlined.")
-                    return [node_image.name, b'']
+                    return b''
                 else:
-                    return [node_image.name, data]
+                    return data
 
             report({"ERROR"}, f"Texture file '{node_image}' not found. Cannot be inlined.")
-        return [node_image.name, b'']
+        return b''
 
     # recursively walk skeleton and construct string representation
     def bonestr(strs, bones, parent, level):
@@ -573,13 +573,13 @@ def write_m3d(context,
                         # at least try to get the diffuse texture from other material types,
                         # because not all wrapped in PrincipledBSDF properly
                         for n in mat.node_tree.nodes:
-                            if n.type == 'TEX_IMAGE' and n.image:
-                                texture_name, data = gettexture(n.image, use_inline)
-                                if texture_name != "":
-                                    s = uniquedict(strs, texture_name)
-                                    if use_inline and len(data) > 8:
-                                        uniquedict(inlined, [s, data])
-                                    props[128] = [128, s]
+                            if n.type == 'TEX_IMAGE' and n.image and n.image.name != "":
+                                data = get_texturedata(n.image, use_inline)
+
+                                s = uniquedict(strs, n.image.name)
+                                if use_inline and len(data) > 8:
+                                    uniquedict(inlined, [s, data])
+                                props[128] = [128, s]
                                 break
                     # otherwise properly parse material if blender can convert it into PrincipledBSDF
                     mat_wrap = node_shader_utils.PrincipledBSDFWrapper(mat)
@@ -625,10 +625,10 @@ def write_m3d(context,
                             if key >= 128:
                                 # according to the doc, texture material attributes should always have val.image
                                 # but sometimes they don't...
-                                if val.image is None:
+                                if val.image is None or val.image.name == "":
                                     continue
-                                texture_name, data = gettexture(val.image, use_inline)
-                                s = uniquedict(strs, texture_name)
+                                data = get_texturedata(val.image, use_inline)
+                                s = uniquedict(strs, val.image.name)
                                 props[key] = [key, s]
                                 if use_inline and len(data) > 8:
                                     uniquedict(inlined, [s, data])
