@@ -424,25 +424,24 @@ def write_m3d(context,
                     continue
 
                 o = ob.evaluated_get(depsgraph) if use_mesh_modifiers else ob.original
-                me = o.to_mesh()
+                mesh = o.to_mesh()
 
                 if use_name is None or use_name == '':
                     use_name = ob.name
 
-                # Triangulate
-                if any(len(poly.loop_indices) != 3 for poly in me.polygons):
-                    bm = bmesh.new()
-                    bm.from_mesh(me)
-                    bmesh.ops.triangulate(bm, faces=bm.faces[:])
-                    bm.to_mesh(me)
-                    bm.free()
+                # Triangulate mesh (no effect if already triangulated)
+                bm = bmesh.new()
+                bm.from_mesh(mesh)
+                bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
+                bm.to_mesh(mesh)
+                bm.free()
 
                 # transform vertices to model-space
-                me.transform(global_matrix @ ob_mat)
+                mesh.transform(global_matrix @ ob_mat)
                 if ob_mat.determinant() < 0.0:
-                    me.flip_normals()
+                    mesh.flip_normals()
                 if use_normals:
-                    me.calc_normals_split()
+                    mesh.calc_normals_split()
 
                 if use_skeleton and len(ob.vertex_groups) > 0:
                     vg = ob.vertex_groups
@@ -450,30 +449,30 @@ def write_m3d(context,
                     vg = []
                     if use_skeleton == True and use_animation == True:
                         report({"ERROR"},
-                               "Mesh '" + me.name + "' in object '" + ob.name + "' has no vertex groups, no skeletal animation possible!")
+                               "Mesh '" + mesh.name + "' in object '" + ob.name + "' has no vertex groups, no skeletal animation possible!")
 
-                if use_uvs and len(me.uv_layers) > 0:
-                    uv_layer = me.uv_layers.active.data[:]
+                if use_uvs and len(mesh.uv_layers) > 0:
+                    uv_layer = mesh.uv_layers.active.data[:]
                 else:
                     uv_layer = []
 
-                if use_colors and len(me.vertex_colors) > 0 and len(
-                        me.vertex_colors[me.vertex_colors.active_index].data) > 0:
-                    vcol = me.vertex_colors[me.vertex_colors.active_index].data
+                if use_colors and len(mesh.vertex_colors) > 0 and len(
+                        mesh.vertex_colors[mesh.vertex_colors.active_index].data) > 0:
+                    vcol = mesh.vertex_colors[mesh.vertex_colors.active_index].data
                 else:
                     vcol = []
 
                 matnames = []
                 if use_materials:
-                    for m in me.materials[:]:
+                    for m in mesh.materials[:]:
                         if m and m.name:
                             matnames.append(uniquedict(strs, safestr(m.name)))
                         else:
                             matnames.append(-1)
 
-                # Ahhh finally we can get the vertices and faces
+                # vertices and faces
                 badref = {}
-                for pi, poly in enumerate(me.polygons):
+                for pi, poly in enumerate(mesh.polygons):
                     face = [-1, [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]
                     if len(matnames) > 0:
                         if poly.material_index < len(matnames):
@@ -486,18 +485,18 @@ def write_m3d(context,
                             except:
                                 badref[poly.material_index] = 1
                                 report({"ERROR"},
-                                       "Polygon face in mesh '" + me.name + "' referencing a non-existent material (index " + str(
+                                       "Polygon face in mesh '" + mesh.name + "' referencing a non-existent material (index " + str(
                                            poly.material_index) + ", largest can be " + str(len(matnames) - 1) + ").")
                         if i >= 0:
                             face[0] = matnames[i]
-                            uniquedict(refmats, me.materials[i])
+                            uniquedict(refmats, mesh.materials[i])
                     for i, li in enumerate(poly.loop_indices):
                         if len(vcol) > 0:
                             c = uniquedict(cmap,
                                            [vcol[li].color[0], vcol[li].color[1], vcol[li].color[2], vcol[li].color[3]])
                         else:
                             c = 0
-                        v = me.vertices[poly.vertices[i]]
+                        v = mesh.vertices[poly.vertices[i]]
                         if use_skeleton and len(vg) > 0 and len(v.groups) > 0:
                             wf = 0.0
                             for g in v.groups:
@@ -554,7 +553,7 @@ def write_m3d(context,
                         if use_uvs and len(uv_layer) > 0:
                             face[2][i] = uniquedict(tmaps, list(uv_layer[li].uv[:]))
                     faces.append(face)
-                del me
+                del mesh
 
         bpy.context.window_manager.progress_update(40)
 
