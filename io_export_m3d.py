@@ -273,7 +273,7 @@ def write_m3d(context,
                 ret += bonestr(strs, bones, i, level + 1)
         return ret
 
-    # the function execution block
+    # the main function execution block
     if True:
         # track time (just for debug)
         time_start = time.time()
@@ -458,9 +458,9 @@ def write_m3d(context,
 
                 if use_colors and len(mesh.vertex_colors) > 0 and len(
                         mesh.vertex_colors[mesh.vertex_colors.active_index].data) > 0:
-                    vcol = mesh.vertex_colors[mesh.vertex_colors.active_index].data
+                    vertex_colors = mesh.vertex_colors[mesh.vertex_colors.active_index].data
                 else:
-                    vcol = []
+                    vertex_colors = []
 
                 matnames = []
                 if use_materials:
@@ -491,9 +491,9 @@ def write_m3d(context,
                             face[0] = matnames[i]
                             uniquedict(refmats, mesh.materials[i])
                     for i, li in enumerate(poly.loop_indices):
-                        if len(vcol) > 0:
+                        if len(vertex_colors) > 0:
                             c = uniquedict(cmap,
-                                           [vcol[li].color[0], vcol[li].color[1], vcol[li].color[2], vcol[li].color[3]])
+                                           [vertex_colors[li].color[0], vertex_colors[li].color[1], vertex_colors[li].color[2], vertex_colors[li].color[3]])
                         else:
                             c = 0
                         v = mesh.vertices[poly.vertices[i]]
@@ -541,10 +541,10 @@ def write_m3d(context,
                             round(v.co.z, digits), 1.0, c, s))
                         if use_normals:
                             try:
-                                no = v.normal.copy()
+                                no = v.normal
                             except:
-                                no = poly.loops[i].normal.copy()
-                            no.normalize()
+                                no = poly.loops[i].normal
+                            no.normalized() # also copies vector
                             face[3][i] = uniquedict(verts, vert(
                                 round(no.x, digits),
                                 round(no.y, digits),
@@ -553,7 +553,6 @@ def write_m3d(context,
                         if use_uvs and len(uv_layer) > 0:
                             face[2][i] = uniquedict(tmaps, list(uv_layer[li].uv[:]))
                     faces.append(face)
-                del mesh
 
         bpy.context.window_manager.progress_update(40)
 
@@ -1175,10 +1174,9 @@ def write_m3d(context,
                 buf = zlib.compress(buf, 9)
 
             # add file header and write out file
-            f = open(filepath, 'wb')
-            s = len(buf) + 8
-            f.write(b'3DMO' + pack("<L", s) + buf)
-            f.close()
+            with open(filepath, 'wb') as f:
+                s = len(buf) + 8
+                f.write(b'3DMO' + pack("<L", s) + buf)
 
         bpy.context.window_manager.progress_end()
 
