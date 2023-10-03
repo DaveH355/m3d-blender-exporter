@@ -8,8 +8,7 @@ Last tested with Blender 3.6.3
 * Added an export option to allow UV coordinates outside the 0-1 range
 * Removed Write Shapes export option as it appears to be unused 
 * Textures will be checked in the .blend file as well as system. 
-* Packed textures will also be automatically converted to png if needed
-
+* Packed textures will be automatically converted to png if needed
 
 ## Contribute
 Are you looking to develop Blender addons? Here's a good workflow

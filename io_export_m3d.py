@@ -240,28 +240,30 @@ def write_m3d(context,
 
         if use_inline:
             # Check if the image is packed in Blender
-            for img in bpy.data.images:
-                if img.name == node_image.name and img.packed_file is not None:
-
-                    if img.file_format == "PNG":
-                        return img.packed_file.data
-                    else:
-                        print("Texture ", img.name + " is not a png. Converting...")
-                        png_data = img_to_png(img)
-                        return png_data
+            if node_image.packed_file is not None:
+                if node_image.file_format == "PNG":
+                    return node_image.packed_file.data
+                else:
+                    print("Texture ", node_image.name + " is not a png. Converting...")
+                    png_data = img_to_png(node_image)
+                    return png_data
 
             # If not packed, try reading from the file system
             if image_path != "":
-                with open(image_path, 'rb') as file:
-                    data = file.read()
+                try:
+                    with open(image_path, 'rb') as file:
+                        data = file.read()
 
-                if len(data) < 8 or data[0:4] != b'\x89PNG':
-                    report({"ERROR"}, f"Texture file '{node_image}' not a valid PNG. Cannot be inlined.")
-                    return b''
-                else:
-                    return data
+                    if len(data) < 8 or data[0:4] != b'\x89PNG':
+                        report({"ERROR"}, f"Texture file '{node_image}' not a valid PNG. Cannot be inlined.")
+                        return b''
+                    else:
+                        return data
+                except:
+                    # could not find file
+                    pass
 
-            report({"ERROR"}, f"Texture file '{node_image}' not found. Cannot be inlined.")
+            report({"ERROR"}, f"Texture file '{node_image.name}' not found. Cannot be inlined.")
         return b''
 
     # recursively walk skeleton and construct string representation
@@ -493,7 +495,8 @@ def write_m3d(context,
                     for i, li in enumerate(poly.loop_indices):
                         if len(vertex_colors) > 0:
                             c = uniquedict(cmap,
-                                           [vertex_colors[li].color[0], vertex_colors[li].color[1], vertex_colors[li].color[2], vertex_colors[li].color[3]])
+                                           [vertex_colors[li].color[0], vertex_colors[li].color[1],
+                                            vertex_colors[li].color[2], vertex_colors[li].color[3]])
                         else:
                             c = 0
                         v = mesh.vertices[poly.vertices[i]]
@@ -544,7 +547,7 @@ def write_m3d(context,
                                 no = v.normal
                             except:
                                 no = poly.loops[i].normal
-                            no.normalized() # also copies vector
+                            no.normalized()  # also copies vector
                             face[3][i] = uniquedict(verts, vert(
                                 round(no.x, digits),
                                 round(no.y, digits),
