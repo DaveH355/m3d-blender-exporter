@@ -48,6 +48,7 @@ import time
 import zlib
 import bmesh
 import os
+from operator import itemgetter
 from struct import pack, unpack
 from mathutils import Matrix
 from bpy_extras import io_utils, node_shader_utils
@@ -556,6 +557,7 @@ def write_m3d(context,
                         if use_uvs and len(uv_layer) > 0:
                             face[2][i] = uniquedict(tmaps, list(uv_layer[li].uv[:]))
                     faces.append(face)
+        faces.sort(key=itemgetter(0))
 
         bpy.context.window_manager.progress_update(40)
 
