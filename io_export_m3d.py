@@ -756,8 +756,11 @@ def write_m3d(context,
         # restore original armature
         for i, ob_main in enumerate(objects):
             if ob_main.type == "ARMATURE":
-                if oldaction != None:
-                    ob_main.animation_data.action = oldaction
+                if oldaction is not None and ob_main.animation_data:
+                    try:
+                        ob_main.animation_data.action = oldaction
+                    except:
+                        continue
                 ob_main.data.pose_position = oldpose[i]
                 ob_main.data.update_tag()
         context.scene.frame_set(oldframe)
