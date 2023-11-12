@@ -83,7 +83,7 @@ mat_property_map = {
 
 
 # -----------------------------------------------------------------------------
-# Load and parse a Model 3D file (unlike the exporter, this is WIP)
+# Load and parse a Model 3D file (this is WIP)
 def read_m3d(context,
              filepath,
              report,
@@ -459,9 +459,10 @@ def write_m3d(context,
                 else:
                     uv_layer = []
 
-                if use_colors and len(mesh.vertex_colors) > 0 and len(
-                        mesh.vertex_colors[mesh.vertex_colors.active_index].data) > 0:
-                    vertex_colors = mesh.vertex_colors[mesh.vertex_colors.active_index].data
+                if use_colors and len(mesh.vertex_colors) > 0:
+                    active_col_layer = mesh.vertex_colors.active
+                    if active_col_layer is not None and len(active_col_layer.data) > 0:
+                        vertex_colors = active_col_layer.data
                 else:
                     vertex_colors = []
 
@@ -548,7 +549,7 @@ def write_m3d(context,
                                 no = v.normal
                             except:
                                 no = poly.loops[i].normal
-                            no.normalized()  # also copies vector
+                            no = no.normalized()  # also copies vector
                             face[3][i] = uniquedict(verts, vert(
                                 round(no.x, digits),
                                 round(no.y, digits),
@@ -557,7 +558,7 @@ def write_m3d(context,
                         if use_uvs and len(uv_layer) > 0:
                             face[2][i] = uniquedict(tmaps, list(uv_layer[li].uv[:]))
                     faces.append(face)
-        faces.sort(key=itemgetter(0))
+        faces.sort(key=itemgetter(0)) # group by material
 
         bpy.context.window_manager.progress_update(40)
 
