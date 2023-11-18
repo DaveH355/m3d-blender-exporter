@@ -2,7 +2,7 @@
 This is forked Blender addon for exporting models in the .m3d format. 
 The original source and docs are at https://gitlab.com/bztsrc/model3d
 
-Last tested with Blender 3.6.3
+Last tested with Blender 4.0
 
 ## ChangeLog
 * Added an export option to allow UV coordinates outside the 0-1 range

@@ -61,7 +61,7 @@ mat_property_map = {
     0: ["color", "base_color", "Kd"],
     1: ["gscale", "metallic", "Ka"],
     2: ["gscale", "specular", "Ks"],
-    3: ["float", "specular_tint", "Ns"],
+    3: ["color", "specular_tint", "Ns"],
     4: ["//color", "emissive", "Ke"],  # not in BSDF?
     5: ["gscale", "transmission", "Tf"],
     6: ["float", "normalmap_strength", "Km"],
@@ -88,7 +88,9 @@ def read_m3d(context,
              filepath,
              report,
              global_matrix=None,
-             ): pass
+             ):
+
+    return {'FINISHED'}
 
 
 # -----------------------------------------------------------------------------
@@ -236,7 +238,7 @@ def write_m3d(context,
         return png_bytes
 
     def get_texturedata(node_image, use_inline):
-        # NOTE: filepath on image could start with // or already absolute path
+        # NOTE: filepath on image could be relative (starting with //) or already absolute path
         image_path = bpy.path.abspath(node_image.filepath)
 
         if use_inline:
