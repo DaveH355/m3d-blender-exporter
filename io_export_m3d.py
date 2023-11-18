@@ -34,7 +34,7 @@
 bl_info = {
     "name": "Model 3D (.m3d) format",
     "author": "Dave-bzt",
-    "version": (0, 1),
+    "version": (0, 2),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "description": "Export M3D",
